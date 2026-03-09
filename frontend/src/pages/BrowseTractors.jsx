@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../firebase';
-import { collection, getDocs, query, orderBy, addDoc } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy, addDoc, where } from 'firebase/firestore';
 import { Search, MapPin, Zap, DollarSign, Tractor, X, Calendar, Clock, FileText } from 'lucide-react';
 
 const BrowseTractors = () => {
@@ -23,6 +23,7 @@ const BrowseTractors = () => {
   const [booking, setBooking] = useState({ date: '', duration: '', notes: '' });
   const [bookingLoading, setBookingLoading] = useState(false);
   const [bookingSuccess, setBookingSuccess] = useState('');
+  const [availabilityError, setAvailabilityError] = useState('');
 
   useEffect(() => {
     fetchTractors();
@@ -82,6 +83,7 @@ const BrowseTractors = () => {
     setSelectedTractor(tractor);
     setBooking({ date: '', duration: '', notes: '' });
     setBookingSuccess('');
+    setAvailabilityError('');
     setShowBookingModal(true);
   };
 
@@ -91,6 +93,22 @@ const BrowseTractors = () => {
 
     setBookingLoading(true);
     try {
+      // Prevent double-booking for the same tractor & date
+      const bookingsRef = collection(db, 'bookings');
+      const availabilityQuery = query(
+        bookingsRef,
+        where('tractorId', '==', selectedTractor.id),
+        where('bookingDate', '==', booking.date),
+        where('status', 'in', ['pending', 'approved'])
+      );
+      const existingForDate = await getDocs(availabilityQuery);
+
+      if (!existingForDate.empty) {
+        setAvailabilityError('This tractor is already booked for that date. Please choose another date.');
+        setBookingLoading(false);
+        return;
+      }
+
       const totalAmount = Number(booking.duration) * Number(selectedTractor.pricePerHour);
 
       await addDoc(collection(db, 'bookings'), {
@@ -429,6 +447,9 @@ const BrowseTractors = () => {
                   <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.9rem', fontWeight: 600, marginBottom: '0.4rem' }}>
                     <Calendar size={15} /> Booking Date
                   </label>
+                  <p style={{ fontSize: '0.8rem', color: '#9ca3af', marginBottom: '0.3rem' }}>
+                    We automatically block dates that already have a confirmed or pending booking.
+                  </p>
                   <input
                     type="date"
                     value={booking.date}
@@ -436,6 +457,11 @@ const BrowseTractors = () => {
                     className="input-field"
                     min={new Date().toISOString().split('T')[0]}
                   />
+                  {availabilityError && (
+                    <p style={{ color: '#dc2626', fontSize: '0.8rem', marginTop: '0.4rem' }}>
+                      {availabilityError}
+                    </p>
+                  )}
                 </div>
 
                 {/* Duration */}
